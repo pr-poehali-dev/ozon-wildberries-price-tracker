@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -72,17 +72,73 @@ const mockProducts: Product[] = [
   },
 ];
 
+const API_URL = 'https://functions.poehali.dev/bd2b6eb3-337d-489e-b770-e35c781f5e19';
+
 const Index = () => {
-  const [products, setProducts] = useState<Product[]>(mockProducts);
+  const [products, setProducts] = useState<Product[]>([]);
   const [activeTab, setActiveTab] = useState('monitoring');
   const [newProductUrl, setNewProductUrl] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  const toggleNotifications = (productId: string) => {
+  useEffect(() => {
+    loadProducts();
+  }, []);
+
+  const loadProducts = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(API_URL);
+      const data = await response.json();
+      setProducts(data.products || []);
+    } catch (error) {
+      console.error('Failed to load products:', error);
+      setProducts(mockProducts);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleNotifications = async (productId: string) => {
+    const product = products.find((p) => p.id === productId);
+    if (!product) return;
+
+    const updatedNotifications = !product.notifications;
+
     setProducts(
       products.map((p) =>
-        p.id === productId ? { ...p, notifications: !p.notifications } : p
+        p.id === productId ? { ...p, notifications: updatedNotifications } : p
       )
     );
+
+    try {
+      await fetch(API_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: productId,
+          notifications: updatedNotifications,
+          targetPrice: product.targetPrice,
+        }),
+      });
+    } catch (error) {
+      console.error('Failed to update notifications:', error);
+      setProducts(
+        products.map((p) =>
+          p.id === productId ? { ...p, notifications: product.notifications } : p
+        )
+      );
+    }
+  };
+
+  const deleteProduct = async (productId: string) => {
+    try {
+      await fetch(`${API_URL}?id=${productId}`, {
+        method: 'DELETE',
+      });
+      setProducts(products.filter((p) => p.id !== productId));
+    } catch (error) {
+      console.error('Failed to delete product:', error);
+    }
   };
 
   const totalSavings = products.reduce(
@@ -135,7 +191,7 @@ const Index = () => {
                 Средняя экономия
               </CardDescription>
               <CardTitle className="text-4xl font-bold">
-                {Math.round(totalSavings / products.length)}₽
+                {products.length > 0 ? Math.round(totalSavings / products.length) : 0}₽
               </CardTitle>
             </CardHeader>
           </Card>
@@ -170,8 +226,28 @@ const Index = () => {
           </TabsList>
 
           <TabsContent value="monitoring" className="space-y-6 animate-scale-in">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {products.map((product, index) => (
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                  <p className="text-muted-foreground">Загрузка товаров...</p>
+                </div>
+              </div>
+            ) : products.length === 0 ? (
+              <div className="text-center py-12">
+                <Icon name="Package" size={48} className="mx-auto mb-4 text-muted-foreground" />
+                <h3 className="text-xl font-semibold mb-2">Нет отслеживаемых товаров</h3>
+                <p className="text-muted-foreground mb-6">
+                  Добавьте первый товар для мониторинга цен
+                </p>
+                <Button onClick={() => setActiveTab('add')}>
+                  <Icon name="Plus" size={20} className="mr-2" />
+                  Добавить товар
+                </Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {products.map((product, index) => (
                 <Card key={product.id} className="overflow-hidden hover:shadow-lg transition-shadow" style={{ animationDelay: `${index * 100}ms` }}>
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between gap-4">
@@ -255,18 +331,27 @@ const Index = () => {
                         </Label>
                       </div>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="outline">
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => window.open(product.productUrl || '#', '_blank')}
+                        >
                           <Icon name="ExternalLink" size={16} />
                         </Button>
-                        <Button size="sm" variant="outline">
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => deleteProduct(product.id)}
+                        >
                           <Icon name="Trash2" size={16} />
                         </Button>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="add" className="animate-scale-in">
