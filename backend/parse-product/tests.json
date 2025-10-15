@@ -1,0 +1,20 @@
+{
+  "tests": [
+    {
+      "name": "Parse product from URL",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "url": "https://www.ozon.ru/product/test-123456789/"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "name": "string",
+        "articleNumber": "string",
+        "marketplace": "string",
+        "currentPrice": "number"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

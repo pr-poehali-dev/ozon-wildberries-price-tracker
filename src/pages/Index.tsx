@@ -73,12 +73,16 @@ const mockProducts: Product[] = [
 ];
 
 const API_URL = 'https://functions.poehali.dev/bd2b6eb3-337d-489e-b770-e35c781f5e19';
+const PARSE_API_URL = 'https://functions.poehali.dev/2b9dd480-b184-4277-accb-e944ffd2df42';
 
 const Index = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [activeTab, setActiveTab] = useState('monitoring');
   const [newProductUrl, setNewProductUrl] = useState('');
   const [loading, setLoading] = useState(true);
+  const [parsedProduct, setParsedProduct] = useState<Partial<Product> | null>(null);
+  const [parsing, setParsing] = useState(false);
+  const [targetPrice, setTargetPrice] = useState<string>('');
 
   useEffect(() => {
     loadProducts();
@@ -138,6 +142,59 @@ const Index = () => {
       setProducts(products.filter((p) => p.id !== productId));
     } catch (error) {
       console.error('Failed to delete product:', error);
+    }
+  };
+
+  const parseProductUrl = async () => {
+    if (!newProductUrl.trim()) return;
+
+    setParsing(true);
+    try {
+      const response = await fetch(PARSE_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: newProductUrl }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to parse product');
+      }
+
+      const data = await response.json();
+      setParsedProduct(data);
+      setTargetPrice(String(Math.round(data.currentPrice * 0.9)));
+    } catch (error) {
+      console.error('Failed to parse product:', error);
+      alert('Не удалось получить данные о товаре. Проверьте ссылку.');
+    } finally {
+      setParsing(false);
+    }
+  };
+
+  const addNewProduct = async () => {
+    if (!parsedProduct) return;
+
+    try {
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...parsedProduct,
+          targetPrice: parseInt(targetPrice) || parsedProduct.currentPrice,
+          notifications: true,
+        }),
+      });
+
+      if (response.ok) {
+        await loadProducts();
+        setNewProductUrl('');
+        setParsedProduct(null);
+        setTargetPrice('');
+        setActiveTab('monitoring');
+      }
+    } catch (error) {
+      console.error('Failed to add product:', error);
+      alert('Не удалось добавить товар');
     }
   };
 
@@ -359,53 +416,91 @@ const Index = () => {
               <CardHeader>
                 <CardTitle>Добавить товар для отслеживания</CardTitle>
                 <CardDescription>
-                  Вставьте ссылку на товар из Ozon или Wildberries, либо укажите артикул
+                  Вставьте ссылку на товар из Ozon или Wildberries
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="space-y-3">
-                  <Label htmlFor="product-url">Ссылка на товар или артикул</Label>
-                  <Input
-                    id="product-url"
-                    placeholder="https://www.ozon.ru/product/... или 123456789"
-                    value={newProductUrl}
-                    onChange={(e) => setNewProductUrl(e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-3">
-                  <Label htmlFor="target-price">Целевая цена (₽)</Label>
-                  <Input
-                    id="target-price"
-                    type="number"
-                    placeholder="Например: 1999"
-                  />
-                </div>
-
-                <div className="space-y-3">
-                  <Label>Уведомления</Label>
-                  <div className="space-y-3 pl-1">
-                    <div className="flex items-center gap-2">
-                      <Switch id="telegram" defaultChecked />
-                      <Label htmlFor="telegram" className="flex items-center gap-2 font-normal">
-                        <Icon name="Send" size={16} />
-                        Telegram
-                      </Label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Switch id="email" defaultChecked />
-                      <Label htmlFor="email" className="flex items-center gap-2 font-normal">
-                        <Icon name="Mail" size={16} />
-                        Email
-                      </Label>
-                    </div>
+                  <Label htmlFor="product-url">Ссылка на товар</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="product-url"
+                      placeholder="https://www.ozon.ru/product/..."
+                      value={newProductUrl}
+                      onChange={(e) => setNewProductUrl(e.target.value)}
+                      disabled={parsing}
+                    />
+                    <Button 
+                      onClick={parseProductUrl}
+                      disabled={!newProductUrl.trim() || parsing}
+                    >
+                      {parsing ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                          Поиск...
+                        </>
+                      ) : (
+                        <>
+                          <Icon name="Search" size={16} className="mr-2" />
+                          Найти
+                        </>
+                      )}
+                    </Button>
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    Поддерживаются ссылки с Ozon.ru и Wildberries.ru
+                  </p>
                 </div>
 
-                <Button className="w-full" size="lg">
-                  <Icon name="Plus" size={20} className="mr-2" />
-                  Начать отслеживание
-                </Button>
+                {parsedProduct && (
+                  <div className="p-4 rounded-lg border bg-gradient-card space-y-4 animate-fade-in">
+                    <div className="flex items-start gap-4">
+                      <img
+                        src={parsedProduct.imageUrl}
+                        alt={parsedProduct.name}
+                        className="w-24 h-24 object-cover rounded-lg"
+                      />
+                      <div className="flex-1">
+                        <h3 className="font-semibold mb-2">{parsedProduct.name}</h3>
+                        <div className="flex items-center gap-2 mb-2">
+                          <Badge variant={parsedProduct.marketplace === 'ozon' ? 'default' : 'secondary'}>
+                            {parsedProduct.marketplace === 'ozon' ? 'Ozon' : 'Wildberries'}
+                          </Badge>
+                          <span className="text-sm text-muted-foreground">
+                            Артикул: {parsedProduct.articleNumber}
+                          </span>
+                        </div>
+                        <p className="text-2xl font-bold text-primary">
+                          {parsedProduct.currentPrice}₽
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <Label htmlFor="target-price">Целевая цена (₽)</Label>
+                      <Input
+                        id="target-price"
+                        type="number"
+                        placeholder="Например: 1999"
+                        value={targetPrice}
+                        onChange={(e) => setTargetPrice(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Вы получите уведомление, когда цена опустится до этого значения
+                      </p>
+                    </div>
+
+                    <Button 
+                      className="w-full" 
+                      size="lg"
+                      onClick={addNewProduct}
+                      disabled={!targetPrice}
+                    >
+                      <Icon name="Plus" size={20} className="mr-2" />
+                      Начать отслеживание
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
